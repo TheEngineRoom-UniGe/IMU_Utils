@@ -7,6 +7,7 @@ const int MUX_ADDRESS = 0x6A;
 struct s_module{
   MPU6050 sensor;
   bool dmpReady;
+  uint8_t newFlag;
 
   Quaternion q;
   VectorInt16 accel;
@@ -43,6 +44,77 @@ void tcaselect(uint8_t i,uint8_t mux_address) {
   Wire.beginTransmission(mux_address);
   Wire.write(1 << i);
   Wire.endTransmission();  
+}
+
+void sendData(s_module imu[], udp_data ROS_data, int8_t numIMU){
+  WiFiUDP Udp;
+
+  byte packetBuffer[1+36*numIMU];
+  memset(packetBuffer, 0, 1+36*numIMU);
+
+  binaryInt numS;
+  numS.integerPoint = numIMU;
+  packetBuffer[0] = numS.binary;
+
+  for(int j=0; j<numIMU;j++){
+    binaryInt ID;
+    ID.integerPoint = imu[j].id;
+    binaryInt newFlag;
+    newFlag.integerPoint = imu[j].newFlag;
+    
+    binary4Float quaternion;
+    quaternion.floatingPoint[0] = imu[j].q.x;
+    quaternion.floatingPoint[1] = imu[j].q.y;
+    quaternion.floatingPoint[2] = imu[j].q.z;
+    quaternion.floatingPoint[3] = imu[j].q.w;
+
+    binary3Int accelerometer;
+    accelerometer.integerPoint[0] = imu[j].accel.x;
+    accelerometer.integerPoint[1] = imu[j].accel.y;
+    accelerometer.integerPoint[2] = imu[j].accel.z;
+
+    binary3Int gyroscope;
+    gyroscope.integerPoint[0] = imu[j].gyro.x;
+    gyroscope.integerPoint[1] = imu[j].gyro.y;
+    gyroscope.integerPoint[2] = imu[j].gyro.z;
+
+    binary3Int magnetometer;
+    magnetometer.integerPoint[0] = imu[j].mag.x;
+    magnetometer.integerPoint[1] = imu[j].mag.y;
+    magnetometer.integerPoint[2] = imu[j].mag.z;
+
+    packetBuffer[36*j+1] = newFlag.binary;
+    packetBuffer[36*(j+1)] = ID.binary;
+    
+    int k=0;
+    for(int i=(2+36*j); i<(18+36*j); i++){
+      packetBuffer[i] = quaternion.binary[k];
+      k++;
+    }
+    
+    k=0;
+    for(int i=(18+36*j); i<(24+36*j); i++){
+      packetBuffer[i] = accelerometer.binary[k];
+      k++;
+    }
+
+    k=0;
+    for(int i=(24+36*j); i<(30+36*j); i++){
+      packetBuffer[i] = gyroscope.binary[k];
+      k++;
+    }
+
+    k=0;
+    for(int i=(30+36*j); i<(36+36*j); i++){
+      packetBuffer[i] = magnetometer.binary[k];
+      k++;
+    }  
+    k=0;
+  }
+
+  int begin = Udp.beginPacket(ROS_data.server, ROS_data.localPort);
+  int write = Udp.write(packetBuffer,1+36*numIMU);
+  int end = Udp.endPacket(); 
 }
 
 void sendData(s_module imu, udp_data ROS_data){
